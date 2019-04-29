@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>TEST</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.8/dist/vue.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.11/lodash.min.js"></script>
+<script type="text/javascript" src="./paper-full.min.js"></script>
+<!--<script type="text/javascript" src="./outlines.js"></script>-->
+<script type="text/javascript" src="./outlines-dollar-q.js"></script>
+<script type="text/javascript" src="./hotkeys.min.js"></script>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+}
+#app {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100vh;
+    justify-content: flex-start;
+}
+.canvas-container {
+    flex-basis: 80%;
+}
+
+#myCanvas {
+    width: 100%;
+    height: 100%;
+}
+.sidebar {
+    flex-basis: 20%;
+    background-color: #f0f0f0;
+    padding: 20px;
+    height: 100%;
+    overflow: scroll;
+}
+li.selected {
+    background-color: lightyellow;
+}
+
+li.matched {
+    /* arrow */
+    list-style-image: url("data:image/svg+xml,%3C%3Fxml version='1.0' encoding='UTF-8' %3F%3E%3Csvg xmlns='http://www.w3.org/2000/svg' version='1.1' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M0 0 10 5 0 10Z' fill='%23f0f'/%3E%3C/svg%3E");
+}
+</style>
+</head>
+<body>
+<div id='app'>
+    <div class='canvas-container'>
+        <canvas id="myCanvas"></canvas>
+    </div>
+    <div class='sidebar'>
+        <h4 style='margin: 10px 0;'>Gesture Classes:</h4>
+        <div class='gclass-container'>
+            <ul style="margin-top: 0px;">
+                <li v-for="(c, index) in gclass"
+                    @click.prevent="selectedClass = selectedClass === index ? -1 : index"
+                    :class="{selected: selectedClass === index, matched: matchedIndex === index}">
+                    {{c.name}} - 
+                    (<a v-if='c.gestures.length > 0' href="#" @click.prevent.stop='drawGestureCleanUp(c.gestures[0])'>{{c.gestures.length}}</a>
+                    <span v-else>{{c.gestures.length}}</span>)
+                    <span style=""><a href='#' @click.prevent.stop='deleteGestureClass(index)'>[x]</a></span>
+                </li>
+            </ul>
+        </div>
+        <h6 style='margin: 5px 0;'>Prediction: <span>(Took: {{tookTime}} ms)</h6>
+        <span v-if='matchedIndex !== -1'>Most likely gesture: {{gclass[matchedIndex].name}}</span>
+        <br>
+        <br>
+        <input ref="input" @keyup.enter="addNewGestureClass" v-model='newGestureClassName' type='text' placeholder="Add New Gesture: Class Name" />
+        <br>
+        <span><small>Press enter to add</small></span>
+        <br>
+        <br>
+        <button @click.prevent="addToGesture" :disabled="selectedClass === -1">Add current drawing to gesture class</button>
+        <br>
+        <br>
+        <button style="height: 35px;" @click.prevent="cleanUp">Clear Drawing</button>
+        <button style="height: 35px;" @click.prevent="undo">Undo</button>
+        <br>
+        <br>
+
+        <h6 style='margin-bottom: 10px'>Local Storage</h6>
+        <button @click.prevent="saveToLocalStorage">Save Data</button>
+        <button @click.prevent="clearLocalStorage">Clear Data</button>
+
+        <h6 style='margin-bottom: 10px'>Load sample data set:</h6>
+        <ul>
+            <li v-for='s in sampleData'>
+                <a href='#' @click.prevent='loadSample(s)'>{{s}}</a>
+            </li>
+        </ul>
+
+    </div>
+</div>
+
+<script type="text/javascript">
+const olPoint = outlines.Point;
+paper.install(window);
+
+// N.B. don't put this inside Vue's data, otherwise things will be slooooow (due to Vue's reactivity/watching)
+var recognizer = new outlines.Recognizer();
+
+var vm = new Vue({
+    el: '#app',
+    data: function () {
+        return {
+            gclass: [
+                {
+                    "name": "Circle",
+                    "gestures": [
+                        [{ "X": 411.2286682128906, "Y": 155.20977783203125, "ID": 0 }, { "X": 377.4928283691406, "Y": 164.7855682373047, "ID": 0 }, { "X": 321.3632507324219, "Y": 244.87423706054688, "ID": 0 }, { "X": 337.94036865234375, "Y": 328.4450378417969, "ID": 0 }, { "X": 432.74981689453125, "Y": 354.85107421875, "ID": 0 }, { "X": 545.0088500976562, "Y": 274.47222900390625, "ID": 0 }, { "X": 488.5885314941406, "Y": 146.2142791748047, "ID": 0 }, { "X": 396.3965148925781, "Y": 154.91958618164062, "ID": 0 }]
+                    ]
+                },
+                {
+                    "name": "Rectangle",
+                    "gestures": [
+                        [ { "X": 298.9696350097656, "Y": 158.98204040527344, "ID": 0 }, { "X": 298.6788330078125, "Y": 165.0757598876953, "ID": 0 }, { "X": 300.42376708984375, "Y": 173.78103637695312, "ID": 0 }, { "X": 305.3678283691406, "Y": 203.37904357910156, "ID": 0 }, { "X": 313.5109558105469, "Y": 274.47222900390625, "ID": 0 }, { "X": 318.745849609375, "Y": 309.5836181640625, "ID": 0 }, { "X": 318.4549865722656, "Y": 307.2621765136719, "ID": 0 }, { "X": 317.87335205078125, "Y": 295.07476806640625, "ID": 0 }, { "X": 289.0815124511719, "Y": 163.91505432128906, "ID": 1 }, { "X": 367.60467529296875, "Y": 157.24099731445312, "ID": 1 }, { "X": 549.3712768554688, "Y": 146.7946319580078, "ID": 1 }, { "X": 603.4650268554688, "Y": 140.12059020996094, "ID": 1 }, { "X": 620.3328857421875, "Y": 140.700927734375, "ID": 1 }, { "X": 612.7714233398438, "Y": 185.38809204101562, "ID": 1 }, { "X": 601.7200317382812, "Y": 289.5614013671875, "ID": 1 }, { "X": 317.2917175292969, "Y": 303.1996765136719, "ID": 2 }, { "X": 337.3587341308594, "Y": 304.94073486328125, "ID": 2 }, { "X": 400.1772766113281, "Y": 302.61932373046875, "ID": 2 }, { "X": 578.1630249023438, "Y": 281.7266540527344, "ID": 2 }, { "X": 661.6303100585938, "Y": 276.2132873535156, "ID": 2 } ]
+                    ]
+                }
+            ],
+            selectedClass: -1,
+            matchedIndex: -1,
+
+            newGestureClassName: null,
+
+            canvas: {
+                el: null,
+                path: null,
+                currentGesture: [],
+                previewGesture: [],
+                tool: null,
+                strokeId: 0,
+            },
+            tookTime: 0,
+            sampleData: [
+                'greek',
+                'cangjie',
+            ],
+        }
+    },
+    methods: {
+        addNewGestureClass: function() {
+            var newGestureClassName = this.newGestureClassName;
+            if(!newGestureClassName) return; // emtpy input case
+            if (_.findIndex(this.gclass, ['name', newGestureClassName]) > -1) {
+                alert(`${newGestureClassName} already exists!`);
+                return;
+            }
+
+            this.gclass.push({
+                name: newGestureClassName,
+                gestures: [],
+            });
+            this.newGestureClassName = null;
+            this.selectedClass = this.gclass.length - 1; // auto select the added one
+        },
+        gestureToPointCloud: function(gesture) {
+            // convert paper.js gesture to outlines.PointCloud
+            var ret = _.flatten(gesture.map(function(stroke) {
+                return stroke.path.map(function(p) {
+                    return new olPoint(p.x, p.y, stroke.strokeId);
+                });
+            }));
+            return ret;
+        },
+        cleanUp: function() {
+            // clean up, restore
+            this.canvas.currentGesture.forEach(function(stroke) {
+                stroke._path.remove();
+            });
+            this.canvas.previewGesture.forEach(function(stroke) {
+                stroke.remove();
+            });
+            this.canvas.strokeId = 0;
+            this.canvas.currentGesture = [];
+            this.canvas.previewGesture = [];
+            this.matchedIndex = -1;
+            this.tookTime = 0;
+        },
+        addToGesture: function() {
+            console.log(this.canvas.currentGesture);
+            if(this.selectedClass < 0) {
+                alert("Please click on a gesture class first to indicate which gesture class it belongs to");
+                return;
+            }
+
+            var gestureToAdd = this.gestureToPointCloud(this.canvas.currentGesture);
+
+            var gestureClassName = this.gclass[this.selectedClass].name;
+            this.gclass[this.selectedClass].gestures.push(gestureToAdd);
+
+            recognizer.PointClouds.push(new outlines.PointCloud(gestureClassName, gestureToAdd));
+
+            this.cleanUp();
+        },
+        addGestureToRecognizer: function() {
+            this.gclass.forEach(function(gesture) {
+                gesture.gestures.forEach(function(g) {
+                    recognizer.PointClouds.push(new outlines.PointCloud(gesture.name, g));
+                }.bind(this));
+            }.bind(this));
+        },
+        saveToLocalStorage: function() {
+            localStorage.setItem('gclass', JSON.stringify(this.gclass));
+            alert("done, data saved, the page will load the same data even after refresh");
+        },
+        loadFromLocalStorage: function() {
+            var stored = localStorage.getItem('gclass');
+            if (!stored) return;
+            this.gclass = JSON.parse(stored);
+        },
+        clearLocalStorage: function() {
+            localStorage.clear();
+            alert("done, please refresh this page");
+        },
+        recognizeCurrentGesture: function() {
+            var st = Date.now();
+            var toRecognize = this.gestureToPointCloud(this.canvas.currentGesture);
+            if (Math.abs(outlines.PathLength(toRecognize)) > 1e-5) { // not single point only
+                var match = recognizer.Recognize(toRecognize);
+                var took = Date.now() - st;
+                console.log(took, match);
+                this.tookTime = took;
+                if (match.Name) {
+                    this.matchedIndex = _.findIndex(this.gclass, ['name', match.Name]);
+                    
+                    this.drawGestureCleanUp(this.gclass[this.matchedIndex].gestures[0]);
+                } else {
+                    this.matchedIndex = -1;
+                }
+            }
+
+        },
+        undo: function() {
+            if(this.canvas.currentGesture.length > 0) {
+                var path = this.canvas.currentGesture.pop();
+                path._path.remove();
+
+                this.recognizeCurrentGesture();
+            }
+        },
+        deleteGestureClass: function(index) {
+            var removed = this.gclass.splice(index, 1);
+            if (removed.length > 0) {
+                _.remove(recognizer.PointClouds, function(pc) {
+                    return pc.Name === removed[0].name;
+                });
+            }
+        },
+        loadSample: function(sample) {
+            fetch(`${sample}.json`)
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(json) {
+                    this.gclass = json;
+                    recognizer.PointClouds = []; // clear old
+                    this.addGestureToRecognizer();
+                }.bind(this))
+                .catch(function(err) {
+                    alert("something went wrong, see console for log");
+                    console.log(err);
+                })
+
+        },
+        drawGesture: function(gesture) {
+            var g = JSON.parse(JSON.stringify(gesture));
+            var shouldResample = false;
+            g = outlines.Normalize(g, shouldResample);
+            var strokes = _.groupBy(g, 'ID');
+            var maxStroke = Math.max.apply(null, Object.keys(_.groupBy(g, 'ID')).map(function(k) { return parseInt(k) })) + 1;
+            for(var i = 0; i < maxStroke; i++) {
+                if(!strokes[i]) continue;
+                var pts = strokes[i].map(function(p) { return new Point(p.X, p.Y) });
+                this.canvas.path = new Path({
+                    strokeColor: 'red',
+                    strokeWidth: 5,
+                    strokeCap: 'round',
+                    strokeJoin: 'round',
+                    segments: pts,
+                });
+                this.canvas.previewGesture.push(this.canvas.path);
+            }
+        },
+        drawGestureCleanUp: function(gesture) {
+            // this.cleanUp();
+
+            this.canvas.previewGesture.forEach(function(stroke) {
+                stroke.remove();
+            });
+            this.canvas.previewGesture = [];
+
+            this.drawGesture(gesture);
+        },
+    },
+    mounted: function() {
+        var canvas = document.querySelector("myCanvas");
+        this.canvas.el = canvas;
+
+        paper.setup('myCanvas');
+        // Create a simple drawing tool:
+        this.canvas.tool = new Tool();
+        this.canvas.currentGesture = [];
+        this.canvas.path;
+
+        // Define a mousedown and mousedrag handler
+        this.canvas.tool.onMouseDown = function(event) {
+            this.canvas.path = new Path();
+            this.canvas.path.strokeColor = 'black';
+            this.canvas.path.strokeCap = 'round';
+            this.canvas.path.strokeJoin = 'round';
+            this.canvas.path.strokeWidth = 5;
+            this.canvas.path.add(event.point);
+
+            this.$refs.input.blur();
+        }.bind(this);
+
+        this.canvas.tool.onMouseDrag = function(event) {
+            this.canvas.path.add(event.point);
+            this.$refs.input.blur();
+        }.bind(this);
+
+        this.canvas.tool.onMouseUp = function(event) {
+            this.canvas.path.simplify();
+            // console.log(this.canvas.path);
+            var pathLength = this.canvas.path.length;
+            this.canvas.currentGesture.push({
+                // path: _.map(this.canvas.path.segments, 'point'),   // <- this is janky line version
+                path: _.range(32).map(function(f) { return this.canvas.path.getPointAt(f/32 * pathLength) }.bind(this)),
+                _path: this.canvas.path,
+                strokeId: this.canvas.strokeId
+            });
+            // debugger;
+            this.canvas.strokeId++;
+
+            // Recognize on each stroke up:
+            this.recognizeCurrentGesture();
+
+            this.$refs.input.blur();
+        }.bind(this);
+
+        this.loadFromLocalStorage();
+        this.addGestureToRecognizer();
+
+        hotkeys('CTRL+Z', function undo(event, handler) {
+            console.log("Undo");
+            this.undo();
+        }.bind(this));
+    },
+});
+</script>
+</body>
+</html>
